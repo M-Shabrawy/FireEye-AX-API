@@ -57,7 +57,7 @@ def instantiate_logs():
 def setup():
     try:
         os.makedirs(logDir)
-    except OSError, e:
+    except OSError as e:
         if e.errno != errno.EEXIST:
             raise
     mylogger = instantiate_logs()
@@ -69,14 +69,14 @@ def setup():
             try:
                 os.makedirs(final)
                 mylogger.info(u"Setup created directory {0:s}".format(final))
-            except OSError, e:
+            except OSError as e:
                 if e.errno != errno.EEXIST:
                     mylogger.error(e)
                     raise
     try:
         os.makedirs(dbDir)
         mylogger.info(u"Setup created directory {0:s}".format(dbDir))
-    except OSError, e:
+    except OSError as e:
         if e.errno != errno.EEXIST:
             mylogger.error(e)
             raise
@@ -144,7 +144,7 @@ def get_fe_config():
     reqUrl = baseUrl + 'config'
     c = requests.get(reqUrl, headers=auth_header, verify=False)
     mylogger.info(c.text)
-    print c.text
+    print (c.text)
 
 
 def calc_hash(fileName):
@@ -267,7 +267,7 @@ def process_results(alert_obj, fqfn):
                         WHERE hash = ? and engine = ?""",
                      (destFileName, compDate, fileResult, str(malwareNames), alert_url, fileHash, profile))
         conn.commit()
-    except sqlite3.Error, e:
+    except sqlite3.Error as e:
         mylogger.error(e)
         sys.exit(1)
 
