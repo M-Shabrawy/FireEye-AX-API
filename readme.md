@@ -1,3 +1,4 @@
+# FireEye AX File Submission Script
 This is a python script that will check local directories for files.
 Files found in the directory will be uploaded to a FireEye AX device for analysis.
 
