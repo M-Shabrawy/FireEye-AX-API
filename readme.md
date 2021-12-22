@@ -4,7 +4,7 @@ Files found in the directory will be uploaded to a FireEye AX device for analysi
 
 The status of the files will be tracked in a sqllite database.
 
-Every time the script is run it will check the configured directories for
+Every time the script is run it will check the configured directories for 
     new files and submit any files found.
 
 After submitting new files, the script will check the sqllite database for

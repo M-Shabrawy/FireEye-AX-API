@@ -1,4 +1,12 @@
-import ConfigParser
+# A pyhton script for subimission of files to FireEye AX (Malware Analysis System) for analysis, load-blancing across multiple unit
+# this is a fork of https://github.com/FeyeAPI/FireEye-AX-API
+# This code is providded as is with no support from FireEye 
+# Created By: Mohamed Al-Shabrawy
+# Repository: https://github.com/m-shabrawy/
+# Version: 2.0.0
+# Updated: 22-12-2021
+
+import configparser
 import argparse
 import os
 import requests
@@ -14,13 +22,13 @@ import logging.handlers
 from lxml import etree
 
 requests.packages.urllib3.disable_warnings()
-config = ConfigParser.ConfigParser()
+config = configparser.ConfigParser()
 config.read(".feapi.ini")
 
 un = config.get('AX Config', 'un')
 pw = config.get('AX Config', 'pw')
-mas = config.get('AX Config', 'mas')
-baseUrl = 'https://%s:443/wsapis/v1.1.0/' % mas
+AXs = config.items('MAS')
+Tokens = []
 
 baseDir = config.get('Local Config', 'baseDir')
 feDirs = config.get('Local Config', 'feDirs')
@@ -36,6 +44,8 @@ priority = config.get('Payload Config', 'priority')
 analysistype = config.get('Payload Config', 'analysistype')
 force = config.get('Payload Config', 'force')
 prefetch = config.get('Payload Config', 'prefetch')
+
+
 
 NS = '{http://www.fireeye.com/alert/2013/AlertSchema}'
 
@@ -96,7 +106,8 @@ def setup():
             analysis_id TEXT,
             result TEXT,
             malware_name TEXT,
-            analysis_url TEXT);''')
+            analysis_url TEXT,
+            ax TEXT);''')
             conn.close()
             mylogger.info("%s database with 'files' table created" % database)
         else:
@@ -109,24 +120,24 @@ def setup():
     mylogger.removeHandler(mylogger)
 
 
-def login(un, pw):
+def login(un, pw, ax):
+    baseUrl = 'https://%s:443/wsapis/v2.0.0/' % ax
     reqUrl = baseUrl + 'auth/login'
     c = requests.post(reqUrl, auth=(un, pw), verify=False)
     if int(c.status_code) == 200:
-        mylogger.info("%s successfully logged in to %s" % (un, mas))
-        return c.headers['X-FeApi-Token']
+        mylogger.info("%s successfully logged in to %s" % (un, ax))
+        apiToken = c.headers['X-FeApi-Token']
+        return apiToken
     elif int(c.status_code) == 401:
-        mylogger.error("%s failed logging in to %s" % (un, mas))
-        sys.exit(1)
+        mylogger.error("%s failed logging in to %s" % (un, ax))
     elif int(c.status_code) == 503:
-        mylogger.error("%s Web Services API not enabled.  Please enable and try again." % mas)
-        sys.exit(1)
+        mylogger.error("%s Web Services API not enabled.  Please enable and try again." % ax)
     else:
-        mylogger.error("Log in to %s failed for some unspecified reason." % mas)
-        sys.exit(1)
+        mylogger.error("Log in to %s failed for some unspecified reason." % ax)
 
 
-def logout(token):
+def logout(token,mas):
+    baseUrl = 'https://%s:443/wsapis/v1.1.0/' % mas
     auth_header = {'X-FeApi-Token': token}
     reqUrl = baseUrl + 'auth/logout?'
     c = requests.post(reqUrl, headers=auth_header, verify=False)
@@ -137,10 +148,11 @@ def logout(token):
         mylogger.info(u"Logout from {0:s} failed for some unspecified reason".format(mas))
 
 
-def get_fe_config():
+def get_fe_config(mas):
     instantiate_logs()
-    token = login(un, pw)
+    token = login(un, pw, mas)
     auth_header = {'X-FeApi-Token': token}
+    baseUrl = 'https://%s:443/wsapis/v2.0.0/' % mas
     reqUrl = baseUrl + 'config'
     c = requests.get(reqUrl, headers=auth_header, verify=False)
     mylogger.info(c.text)
@@ -161,13 +173,13 @@ def calc_hash(fileName):
     return fHash
 
 
-def submit_for_analysis(token, fqfn):
+def submit_for_analysis(ax, token, fqfn):
     profileDir, fName = os.path.split(fqfn)
     baseDir, profile = os.path.split(profileDir)
 
     fHash = calc_hash(fqfn)
-    cursor = conn.execute("""select datetime(start, '+1 day'), result from files where hash = ? and engine = ?""",
-                          (fHash, profile))
+    cursor = conn.execute("""select datetime(start, '+1 day'), result from files where hash = ? and engine = ? and ax = ?""",
+                          (fHash, profile, ax))
     for row in cursor:
         raTime = datetime.datetime.strptime(row[0], '%Y-%m-%d %H:%M:%S')
         if raTime >= datetime.datetime.now() or row[1] == 'pending':
@@ -185,7 +197,7 @@ def submit_for_analysis(token, fqfn):
                                              '"analysistype":"%s", "force":"%s","prefetch":"%s"}' % (
                                                  application, timeout, priority, profile, analysistype, force,
                                                  prefetch)}
-
+    baseUrl = 'https://%s:443/wsapis/v1.1.0/' % ax
     reqUrl = baseUrl + 'submissions'
     mylogger.info(fName)
     mylogger.info(payload)
@@ -200,9 +212,9 @@ def submit_for_analysis(token, fqfn):
         dstFileName = os.path.join(profileDir, 'Pending', fName)
         os.rename(fqfn, dstFileName)
         conn.execute("""insert into files
-                    (hash, filename, start, engine, analysis_id, result)
-                    values (?,?,?,?,?,?)""",
-                     (fHash, dstFileName, now, profile, analysis_id, 'pending')
+                    (hash, filename, start, engine, analysis_id, result, ax)
+                    values (?,?,?,?,?,?,?)""",
+                     (fHash, dstFileName, now, profile, analysis_id, 'pending',ax)
                      )
         conn.commit()
         mylogger.info("Submitted %s to profile %s for analysis." % (fqfn, profile))
@@ -250,9 +262,9 @@ def process_results(alert_obj, fqfn):
 
         if fileHash != fHash:
             mylogger.error(
-                "Hash returned in analysis results (%s) does not equal hash of file on disk (%s).  Exiting program." % (
+                "Hash returned in analysis results (%s) does not equal hash of file on disk (%s)." % (
                     fileHash, fHash))
-            sys.exit(1)
+            #sys.exit(1)
 
     os.rename(fqfn, destFileName)
     mylogger.info("moved %s to %s" % (fqfn, destFileName))
@@ -264,16 +276,17 @@ def process_results(alert_obj, fqfn):
                         result = ?,
                         malware_name = ?,
                         analysis_url = ?
-                        WHERE hash = ? and engine = ?""",
-                     (destFileName, compDate, fileResult, str(malwareNames), alert_url, fileHash, profile))
+                        WHERE hash = ? and engine = ? and ax = """,
+                     (destFileName, compDate, fileResult, str(malwareNames), alert_url, fileHash, profile, ax))
         conn.commit()
     except sqlite3.Error as e:
         mylogger.error(e)
         sys.exit(1)
 
 
-def get_results(token, analysis_id, fqfn):
+def get_results(ax, token, analysis_id, fqfn):
     auth_header = {'X-FeApi-Token': token}
+    baseUrl = 'https://%s:443/wsapis/v2.0.0/' % ax
     reqUrl = baseUrl + 'submissions/results/' + str(analysis_id) + '?info_level=normal'
 
     c = requests.get(reqUrl, headers=auth_header, verify=False)
@@ -297,8 +310,9 @@ def get_results(token, analysis_id, fqfn):
             "get_results request for %s still processing as analysis_id: %s.  Try again later." % (fqfn, analysis_id))
 
 
-def check_submission(token, analysis_id, fqfn):
+def check_submission(ax, token, analysis_id, fqfn):
     auth_header = {'X-FeApi-Token': token}
+    baseUrl = 'https://%s:443/wsapis/v1.1.0/' % ax
     reqUrl = baseUrl + 'submissions/status/' + str(analysis_id)
 
     c = requests.get(reqUrl, headers=auth_header, verify=False)
@@ -306,7 +320,7 @@ def check_submission(token, analysis_id, fqfn):
     if int(c.status_code) == 200:
         subStatus = c.json()['submissionStatus']
         if subStatus == "Done":
-            mylogger.info("Analysis of %s with analysis_id %s completed." % (fqfn, analysis_id))
+            mylogger.info("Analysis of %s with analysis_id %s completed on %s." % (fqfn, analysis_id, ax))
             get_results(token, analysis_id, fqfn)
         elif subStatus == "Submission not found":
             mylogger.warn("check_submission request failed.  Could not find analysis_id %s" % (analysis_id,))
@@ -328,41 +342,53 @@ def check_submission(token, analysis_id, fqfn):
                 fqfn, analysis_id, str(c.status_code)))
 
 
-def check_pending_analyses(token):
-    cursor = conn.execute("select analysis_id, filename from files where result = 'pending'")
+def check_pending_analyses():
+    for ax, token in Tokens:
+        query = "select analysis_id, filename from files where result = 'pending' and ax = '%s'" % ax
+        cursor = conn.execute(query)
+        for row in cursor:
+            # analysis_id = row[0]
+            # fully_qualified_file_name =  row[1]
+            mylogger.info("Checking submission status for %s, analysis_id %s" % (row[1], row[0]))
+            check_submission(ax, token, row[0], row[1])
 
-    for row in cursor:
-        # analysis_id = row[0]
-        # fully_qualified_file_name =  row[1]
-        mylogger.info("Checking submission status for %s, analysis_id %s" % (row[1], row[0]))
-        check_submission(token, row[0], row[1])
 
-
-def submit_new_files(token):
+def submit_new_files(Tokens):
     # for fileName found in base_dir/fe_dirs that aren't dirs
     for adirectory in feDirs.split(',', ):
         searchDir = os.path.join(baseDir, adirectory)
         files_to_process = os.listdir(searchDir)
+        i = 0
         for fn in files_to_process:
             fqfn = os.path.join(baseDir, adirectory, fn)
             if os.path.isfile(fqfn):
-                mylogger.info("Submitting %s for analysis." % (fqfn,))
-                submit_for_analysis(token, fqfn)
-
+                mylogger.info("Submitting %s for analysis on %s." % (fqfn,))
+                submit_for_analysis(Tokens[i][0],Tokens[i][1], fqfn)
+                i+1
+            if i > len(Tokens): i = 0
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--setup", help="Option to create directories and databases needed for the tool")
     args = parser.parse_args()
-
+    # Run setup if we are asked to
     if args.setup:
         setup()
-
+    # let's start logging
     mylogger = instantiate_logs()
-    token = login(un, pw)
+    # let's hunt some treasures from DB
     database = os.path.join(dbDir, db)
     conn = sqlite3.connect(database)
-    check_pending_analyses(token)
-    submit_new_files(token)
-    logout(token)
+    # now we build the empire of connections
+    for key, ax in AXs:
+        token = login(un, pw)
+        Tokens.append([ax,token])
+    # So we are good to go after eleminating any offline AX
+    for ax, token in Tokens:
+        check_pending_analyses(ax,token)
+    # Submit new files going round-robin across all AXs
+    submit_new_files(Tokens)
+    # We are done let's get out of here
+    for ax, token in Tokens:
+        logout(ax,token)
     conn.close()
