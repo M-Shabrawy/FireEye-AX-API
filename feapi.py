@@ -364,7 +364,7 @@ def submit_new_files(Tokens):
             if os.path.isfile(fqfn):
                 mylogger.info("Submitting %s for analysis on %s." % (fqfn,))
                 submit_for_analysis(Tokens[i][0],Tokens[i][1], fqfn)
-                i+1
+                i = i+1
             if i > len(Tokens): i = 0
 
 if __name__ == '__main__':
