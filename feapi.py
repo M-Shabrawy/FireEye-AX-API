@@ -384,6 +384,5 @@ if __name__ == '__main__':
     # Submit new files going round-robin across all AXs
     submit_new_files(Tokens)
     # We are done let's get out of here
-    for ax, token in Tokens:
     logout()
     conn.close()
