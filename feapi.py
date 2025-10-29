@@ -349,7 +349,7 @@ def check_pending_analyses():
             check_submission(ax, token, row[0], row[1])
 
 
-def submit_new_files(Tokens):
+def submit_new_files():
     # for fileName found in base_dir/fe_dirs that aren't dirs
     for adirectory in feDirs.split(',', ):
         searchDir = os.path.join(baseDir, adirectory)
@@ -358,9 +358,9 @@ def submit_new_files(Tokens):
         for fn in files_to_process:
             fqfn = os.path.join(baseDir, adirectory, fn)
             if os.path.isfile(fqfn):
-                mylogger.info("Submitting %s for analysis on %s." % (fqfn,))
+                mylogger.info(f"Submitting {fqfn} for analysis on {Tokens[i][0]}.")
                 submit_for_analysis(Tokens[i][0],Tokens[i][1], fqfn)
-                i = i+1
+                i += 1
             if i > len(Tokens): i = 0
 
 if __name__ == '__main__':
@@ -382,7 +382,7 @@ if __name__ == '__main__':
     # So we are good to go after eleminating any offline AX
     check_pending_analyses()
     # Submit new files going round-robin across all AXs
-    submit_new_files(Tokens)
+    submit_new_files()
     # We are done let's get out of here
     logout()
     conn.close()
