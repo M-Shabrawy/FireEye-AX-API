@@ -45,14 +45,10 @@ analysistype = config.get('Payload Config', 'analysistype')
 force = config.get('Payload Config', 'force')
 prefetch = config.get('Payload Config', 'prefetch')
 
-
-
 NS = '{http://www.fireeye.com/alert/2013/AlertSchema}'
-
 
 def instantiate_logs():
     fq_log_name = os.path.join(logDir, logFile)
-
     global mylogger
     mylogger = logging.getLogger(__name__)
     mylogger.setLevel(logging.DEBUG)
@@ -63,7 +59,6 @@ def instantiate_logs():
     mylogger.addHandler(myhandler)
     return mylogger
 
-
 def setup():
     try:
         os.makedirs(logDir)
@@ -71,21 +66,21 @@ def setup():
         if e.errno != errno.EEXIST:
             raise
     mylogger = instantiate_logs()
-    mylogger.info("Instantiated %s in %s" % (logFile, logDir))
+    mylogger.info(f"Instantiated {logFile} in {logDir}")
     for adirectory in feDirs.split(',', ):
         middir = os.path.join(baseDir, adirectory)
         for subdir in resultDirs.split(',', ):
             final = os.path.join(middir, subdir)
             try:
                 os.makedirs(final)
-                mylogger.info(u"Setup created directory {0:s}".format(final))
+                mylogger.info(f"Setup created directory {final}")
             except OSError as e:
                 if e.errno != errno.EEXIST:
                     mylogger.error(e)
                     raise
     try:
         os.makedirs(dbDir)
-        mylogger.info(u"Setup created directory {0:s}".format(dbDir))
+        mylogger.info(f"Setup created directory {dbDir}")
     except OSError as e:
         if e.errno != errno.EEXIST:
             mylogger.error(e)
@@ -109,11 +104,11 @@ def setup():
             analysis_url TEXT,
             ax TEXT);''')
             conn.close()
-            mylogger.info("%s database with 'files' table created" % database)
+            mylogger.info(f"{database} database with 'files' table created")
         else:
-            mylogger.info("Skipped creating %s because it already exists." % database)
+            mylogger.info(f"Skipped creating {database} because it already exists.")
     except:
-        mylogger.error("Failed creating %s" % database)
+        mylogger.error(f"Failed creating {database}")
         mylogger.error(sys.exc_info()[0])
 
     mylogger.handlers[0].close()
@@ -121,31 +116,32 @@ def setup():
 
 
 def login(un, pw, ax):
-    baseUrl = 'https://%s:443/wsapis/v2.0.0/' % ax
+    baseUrl = f'https://{ax}:443/wsapis/v2.0.0/'
     reqUrl = baseUrl + 'auth/login'
     c = requests.post(reqUrl, auth=(un, pw), verify=False)
     if int(c.status_code) == 200:
-        mylogger.info("%s successfully logged in to %s" % (un, ax))
+        mylogger.info(f"{un} successfully logged in to {ax}")
         apiToken = c.headers['X-FeApi-Token']
         return apiToken
     elif int(c.status_code) == 401:
-        mylogger.error("%s failed logging in to %s" % (un, ax))
+        mylogger.error(f"{un} failed logging in to {ax}")
     elif int(c.status_code) == 503:
-        mylogger.error("%s Web Services API not enabled.  Please enable and try again." % ax)
+        mylogger.error(f"{ax} Web Services API not enabled.  Please enable and try again.")
     else:
-        mylogger.error("Log in to %s failed for some unspecified reason." % ax)
+        mylogger.error(f"Log in to {ax} failed for some unspecified reason.")
 
 
-def logout(token,mas):
-    baseUrl = 'https://%s:443/wsapis/v1.1.0/' % mas
-    auth_header = {'X-FeApi-Token': token}
-    reqUrl = baseUrl + 'auth/logout?'
-    c = requests.post(reqUrl, headers=auth_header, verify=False)
-    if int(c.status_code) == 204:
-        mylogger.info("Successfully logged out of %s." % mas)
-        return "Logged out"
-    else:
-        mylogger.info(u"Logout from {0:s} failed for some unspecified reason".format(mas))
+def logout():
+    for ax, token in Tokens.items():
+        baseUrl = f'https://{ax}:443/wsapis/v1.1.0/'
+        auth_header = {'X-FeApi-Token': token}
+        reqUrl = baseUrl + 'auth/logout?'
+        c = requests.post(reqUrl, headers=auth_header, verify=False)
+        if int(c.status_code) == 204:
+            mylogger.info(f"Successfully logged out of {ax}.")
+            return "Logged out"
+        else:
+            mylogger.info(f"Logout from {ax} failed for some unspecified reason.")
 
 
 def get_fe_config(mas):
@@ -384,11 +380,10 @@ if __name__ == '__main__':
         token = login(un, pw)
         Tokens.append([ax,token])
     # So we are good to go after eleminating any offline AX
-    for ax, token in Tokens:
-        check_pending_analyses(ax,token)
+    check_pending_analyses()
     # Submit new files going round-robin across all AXs
     submit_new_files(Tokens)
     # We are done let's get out of here
     for ax, token in Tokens:
-        logout(ax,token)
+    logout()
     conn.close()
